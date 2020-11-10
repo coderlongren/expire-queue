@@ -45,10 +45,15 @@
         <maven-jar-plugin.version>3.2.0</maven-jar-plugin.version>
         <jedis-jar.version>2.7.1</jedis-jar.version>
         <common-lang.version>3.3.2</common-lang.version>
+        <bufferTrigger.version>0.2.19</bufferTrigger.version>
     </properties>
 
     <dependencies>
-
+        <dependency>
+            <groupId>com.github.phantomthief</groupId>
+            <artifactId>buffer-trigger</artifactId>
+            <version>${bufferTrigger.version}</version>
+        </dependency>
         <dependency>
             <groupId>redis.clients</groupId>
             <artifactId>jedis</artifactId>
