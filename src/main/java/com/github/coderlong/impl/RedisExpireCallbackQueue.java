@@ -1,6 +1,8 @@
 package com.github.coderlong.impl;
 
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -10,6 +12,8 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.github.coderlong.ExpireCallbackQueue;
 import com.github.phantomthief.collection.BufferTrigger;
@@ -22,6 +26,8 @@ import redis.clients.jedis.Jedis;
  * Created on 2020-11-10
  */
 public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RedisExpireCallbackQueue.class);
+
     private static final long DEFAULT_SLEEP = 1L;
     private static final int DEFAULT_BATCH_COUNT = 100;
     private Jedis jedisConfig;
@@ -41,13 +47,23 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
     private ExecutorService executorService;
     private AtomicBoolean[] runnings;
     /**
-     *  对存入redis的对象 序列化/反序列化
+     * 序列化
      */
     private Function<T, String> encoder;
+
+    /**
+     *  反序列化
+     */
     private Function<String, T> decoder;
 
+    /**
+     * @see BufferTrigger
+     */
     private boolean enableBufferTrigger;
 
+    /**
+     *  TODO 支持本利聚合enqueue， 适合对消费有一定延迟，对enqueue性能追求极致
+     */
     private BufferTrigger bufferTrigger;
 
     public RedisExpireCallbackQueue(Jedis jedisConfig, String queue, int partitions,
@@ -60,10 +76,9 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
         this.decoder = decoder;
         this.sleepPeriod = sleepPeriod;
         this.batchPopCount = batchPopCount;
-
         if (partitions <= 1) {
             executorService = Executors.newSingleThreadExecutor();
-        } else if (partitions > 1){
+        } else if (partitions > 1) {
             executorService = Executors.newFixedThreadPool(partitions);
         }
         for (int i = 0; i < partitions; i++) {
@@ -80,14 +95,59 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
 
     @Override
     public void consume(BiFunction<T, Date, CompletableFuture<Boolean>> callback, BooleanSupplier stopSignal) {
+        doConsumer(callback, stopSignal);
+    }
+
+    private void doConsumer(BiFunction<T, Date, CompletableFuture<Boolean>> callback, BooleanSupplier stopSignal) {
+        if (callback == null) {
+
+        }
+        List<String> queueNames = getQueueNames();
+        if (queueNames == null || queueNames.size() <= 0) {
+            LOGGER.error("queueNames is empty");
+            return;
+        }
+        for (int i = 0; i < queueNames.size(); i++) {
+            String queueName = queueNames.get(i);
+            AtomicBoolean running = runnings[i];
+            if (running.compareAndSet(false, true)) {
+                executorService.submit(() -> {
+                    consume(queueName, callback, stopSignal);
+                    running.set(false);
+                });
+            }
+        }
+    }
+
+
+    private void consume(String queueName, BiFunction<T, Date, CompletableFuture<Boolean>> callback, BooleanSupplier stopSignal) {
 
     }
 
+    private List<String> getQueueNames() {
+        List<String> queueNames = new ArrayList<>();
+        if (partitions > 0) {
+            for (int i = 0; i < partitions; i++) {
+                queueNames.add(this.queue + "_" + i);
+            }
+        } else {
+            queueNames.add(this.queue);
+        }
+        return queueNames;
+    }
+
+    /**
+     *  获取redis zset队列中对象过期时间
+     * @param obj
+     * @return
+     */
     @Override
     public Date getExpireTime(T obj) {
-
-        return null;
+        String queueName = getQueueName(obj);
+        Double score = jedisConfig.zscore(queueName, encoder.apply(obj));
+        return score == null ? null : new Date(score.longValue());
     }
+
 
     private String getQueueName(T object) {
         String queueName = queue;
