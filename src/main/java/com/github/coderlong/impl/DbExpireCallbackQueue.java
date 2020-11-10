@@ -10,9 +10,10 @@ import com.github.coderlong.ExpireCallbackQueue;
 /**
  * @author coderlongren
  *  基于DB的过期队列
- * Created on 2020-11-05
+ * Created on 2020-11-10
  */
 public class DbExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
+
     @Override
     public void enqueue(T object, long expireAt) {
 

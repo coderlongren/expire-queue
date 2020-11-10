@@ -43,9 +43,22 @@
         <maven-surefire-plugin.version>3.0.0-M5</maven-surefire-plugin.version>
         <git-commit-id-plugin.version>2.2.6</git-commit-id-plugin.version>
         <maven-jar-plugin.version>3.2.0</maven-jar-plugin.version>
+        <jedis-jar.version>2.7.1</jedis-jar.version>
+        <common-lang.version>3.3.2</common-lang.version>
     </properties>
 
     <dependencies>
+
+        <dependency>
+            <groupId>redis.clients</groupId>
+            <artifactId>jedis</artifactId>
+            <version>${jedis-jar.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+            <version>${common-lang.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
