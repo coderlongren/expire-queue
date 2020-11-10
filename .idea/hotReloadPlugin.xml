@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="HotReloadPluginConfiguration">
+    <option name="keywords">
+      <list>
+        <option value="11214" />
+      </list>
+    </option>
+    <option name="selectedHostName" value="sd-bjpg-c102.yz02:18806" />
+    <option name="selectedProcess">
+      <JvmProcess>
+        <option name="detailVmArgs" value="-Dnop -Djava.util.logging.manager=org.apache.juli.ClassLoaderLogManager -Xms5000M -Xmx5000M -Xmn5000M -Xss256k -XX:ThreadStackSize=512 -verbose:gc -XX:PermSize=128M -XX:MaxPermSize=256M -XX:+PrintGCDetails -XX:+UseParallelGC -XX:+PrintGCTimeStamps -Duser.language=zh -Duser.region=CN -DCATALINA_OUT=/data/logs/8000/catalina.out -DLOG_PATH=/data/logs/8000 -Djava.net.preferIPv4Stack=true -DSERVER_NAME=sd-bjpg-c102_8000 -Djava.endorsed.dirs=/data/web_server/apache/tomcat/endorsed -Dcatalina.base=/data/web_server/apache/tomcat_8000 -Dcatalina.home=/data/web_server/apache/tomcat -Djava.io.tmpdir=/data/web_server/apache/tomcat_8000/temp" />
+        <option name="displayName" value="org.apache.catalina.startup.Bootstrap start" />
+        <option name="pid" value="11214" />
+      </JvmProcess>
+    </option>
+    <option name="server" value="hotfix.test.gifshow.com" />
+  </component>
+</project>
