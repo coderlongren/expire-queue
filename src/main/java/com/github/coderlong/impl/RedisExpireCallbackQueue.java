@@ -28,6 +28,7 @@ import com.github.coderlong.util.CompletableFutureWrapper;
 import com.github.phantomthief.collection.BufferTrigger;
 
 import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.Tuple;
 
 /**
@@ -40,7 +41,7 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
     private static final int DEFAULT_MAX_BATCH_AWAIT_MINUTES = 5;
     private static final long DEFAULT_SLEEP = 1L;
     private static final int DEFAULT_BATCH_COUNT = 100;
-    private Jedis jedisConfig;
+    private JedisPool jedisPool;
     private String queue;
     private int partitions;
     private Function<T, Integer> partition;
@@ -76,10 +77,10 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
      */
     private BufferTrigger bufferTrigger;
 
-    public RedisExpireCallbackQueue(Jedis jedisConfig, String queue, int partitions,
+    public RedisExpireCallbackQueue(JedisPool jedisPool, String queue, int partitions,
             Function<T, Integer> partition, Function<T, String> encoder, Function<String, T> decoder, long sleepPeriod,
             int batchPopCount) {
-        this.jedisConfig = jedisConfig;
+        this.jedisPool = jedisPool;
         this.queue = queue;
         this.partitions = partitions;
         this.partition = partition;
@@ -102,7 +103,18 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
     @Override
     public void enqueue(T object, long expireAt) {
         String queueName = getQueueName(object);
-        jedisConfig.zadd(queueName, expireAt, encoder.apply(object));
+        Jedis jedis = null;
+        try {
+            jedis = jedisPool.getResource();
+            jedis.zadd(queueName, expireAt, encoder.apply(object));
+        } catch (Exception e) {
+            LOGGER.error("添加redis失败", e);
+        } finally {
+            if (jedis != null) {
+                jedisPool.returnResourceObject(jedis);
+            }
+        }
+
     }
 
     /**
@@ -164,18 +176,34 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
     }
 
     private List<QueueItem> pop(String queueName, long expireBefore, int batchCount) {
+        Jedis jedis = jedisPool.getResource();
         try {
-            Set<Tuple> set = jedisConfig.zrangeByScoreWithScores(queueName, 0,
+
+            Set<Tuple> set = jedis.zrangeByScoreWithScores(queueName, 0,
                     expireBefore, 0, batchCount);
             return map(set);
         } catch (Exception e) {
-            LOGGER.error("failed to pop");
+            LOGGER.error("failed to pop", e);
+        } finally {
+            jedisPool.returnResourceObject(jedis);
         }
         return Collections.emptyList();
     }
 
     private long remove(String queueName, T obj) {
-        return jedisConfig.zrem(queueName, encoder.apply(obj));
+        String redisValue = encoder.apply(obj);
+        Jedis jedis = null;
+        try {
+            jedis = jedisPool.getResource();
+            jedis.zrem(queueName, encoder.apply(obj));
+        } catch (Exception e) {
+            LOGGER.error("delete redis fail. ", e);
+        } finally {
+            if(null != jedis) {
+                jedisPool.returnResourceObject(jedis);
+            }
+        }
+        return 1L;
     }
 
     private List<QueueItem> map(Set<Tuple> set) {
@@ -242,7 +270,7 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
     @Override
     public Date getExpireTime(T obj) {
         String queueName = getQueueName(obj);
-        Double score = jedisConfig.zscore(queueName, encoder.apply(obj));
+        Double score = jedisPool.getResource().zscore(queueName, encoder.apply(obj));
         return score == null ? null : new Date(score.longValue());
     }
 
@@ -256,7 +284,7 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
     }
 
     public static class Builder<T> {
-        private Jedis jedis;
+        private JedisPool jedisPool;
         private int partitions;
         private Function<T, Integer> partition;
         private Function<T, String> encoder;
@@ -274,8 +302,8 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
             return this;
         }
 
-        public Builder<T> withJedis(Jedis jedis) {
-            this.jedis = jedis;
+        public Builder<T> withJedisPool(JedisPool jedisPool) {
+            this.jedisPool = jedisPool;
             return this;
         }
 
@@ -311,7 +339,7 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
 
         public ExpireCallbackQueue<T> build() {
             ensure();
-            return new RedisExpireCallbackQueue<>(jedis, queue, partitions, partition, encoder, decoder, sleepPeriod,
+            return new RedisExpireCallbackQueue<>(jedisPool, queue, partitions, partition, encoder, decoder, sleepPeriod,
                     batchPopCount);
         }
 
