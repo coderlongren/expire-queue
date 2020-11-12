@@ -1,3 +1,6 @@
+
+[![Coverage Status](https://coveralls.io/repos/github/coderlongren/expire-queue/badge.svg?branch=main)](https://coveralls.io/github/coderlongren/expire-queue?branch=main)
+
 ## 过期Queue 消费， 支持关系型DB & Redis 
 - Java8
 - Redis
