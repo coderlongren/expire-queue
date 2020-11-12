@@ -1,5 +1,7 @@
 package com.github.coderlong.impl;
 
+import static com.google.common.util.concurrent.Uninterruptibles.sleepUninterruptibly;
+
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -10,6 +12,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
 import java.util.function.BooleanSupplier;
@@ -89,6 +92,7 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
         } else if (partitions > 1) {
             executorService = Executors.newFixedThreadPool(partitions);
         }
+        runnings = new AtomicBoolean[partitions];
         for (int i = 0; i < partitions; i++) {
             runnings[i] = new AtomicBoolean(false);
         }
@@ -104,7 +108,7 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
     /**
      * 消费逻辑
      *
-     * @param stopSignal 中断消费的hook (一般enqueue 和 consume不在一个jvm内， consumer进程应该保证jvm实例关闭时,stopSignal.set(false))
+     * @param stopSignal 中断消费的hook (一般enqueue 和 consume不在一个jvm内， consumer进程应该保证jvm实例关闭时, {@link }stopSignal.set(false))
      */
     @Override
     public void consume(BiFunction<T, Date, CompletableFuture<Boolean>> callback, BooleanSupplier stopSignal) {
@@ -112,9 +116,6 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
     }
 
     private void doConsumer(BiFunction<T, Date, CompletableFuture<Boolean>> callback, BooleanSupplier stopSignal) {
-        if (callback == null) {
-
-        }
         List<String> queueNames = getQueueNames();
         if (queueNames == null || queueNames.size() <= 0) {
             LOGGER.error("queueNames is empty");
@@ -135,7 +136,6 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
 
     private void consume(String queueName, BiFunction<T, Date, CompletableFuture<Boolean>> callback,
             BooleanSupplier stopSignal) {
-
         while (stopSignal == null || !stopSignal.getAsBoolean()) {
             List<QueueItem> items = pop(queueName, System.currentTimeMillis(), batchPopCount);
             List<CompletableFuture> futures = items.stream().map(item ->
@@ -149,14 +149,17 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
                         }
                     })
             ).collect(Collectors.toList());
-
-            CompletableFutureWrapper
-                    .orTimeout(CompletableFuture.allOf(futures.toArray(new CompletableFuture[1])), Duration
-                            .ofSeconds(DEFAULT_MAX_BATCH_AWAIT_MINUTES)).whenComplete((res, err) -> {
-                if (err != null) {
+            if (futures != null && futures.size() > 0) {
+                CompletableFutureWrapper
+                        .orTimeout(CompletableFuture.allOf(futures.toArray(new CompletableFuture[1])), Duration
+                                .ofSeconds(DEFAULT_MAX_BATCH_AWAIT_MINUTES)).exceptionally(err -> {
                     LOGGER.error("batch consume timeout fail");
-                }
-            });
+                    return null;
+                });
+            }
+            if (items.size() < batchPopCount) {
+                sleepUninterruptibly(sleepPeriod, TimeUnit.SECONDS);
+            }
         }
     }
 
@@ -166,7 +169,7 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
                     expireBefore, 0, batchCount);
             return map(set);
         } catch (Exception e) {
-            LOGGER.error("failed to pop", e);
+            LOGGER.error("failed to pop");
         }
         return Collections.emptyList();
     }
@@ -252,7 +255,7 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
         return queueName;
     }
 
-    static class Builder<T> {
+    public static class Builder<T> {
         private Jedis jedis;
         private int partitions;
         private Function<T, Integer> partition;
@@ -295,6 +298,16 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
             this.batchPopCount = value;
             return this;
         }
+        public Builder<T> withEncoder(Function<T, String> encoder) {
+            this.encoder = encoder;
+            return this;
+        }
+
+        public Builder<T> withDecoder(Function<String, T> decoder) {
+            this.decoder = decoder;
+            return this;
+        }
+
 
         public ExpireCallbackQueue<T> build() {
             ensure();
