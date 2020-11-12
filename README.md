@@ -1,6 +1,7 @@
 
 [![Coverage Status](https://coveralls.io/repos/github/coderlongren/expire-queue/badge.svg?branch=main)](https://coveralls.io/github/coderlongren/expire-queue?branch=main)
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/coderlongren/expire-queue.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/coderlongren/expire-queue/alerts/)
+[![Language grade: Java](https://img.shields.io/lgtm/grade/java/g/coderlongren/expire-queue.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/coderlongren/expire-queue/context:java)
 
 ## 过期Queue 消费， 支持关系型DB & Redis 
 - Java8
