@@ -19,16 +19,18 @@ import redis.clients.jedis.JedisPool;
 
 public class TestExpireQueue {
     private static JedisPool jedisPool;
+    private static ScheduledExecutorService scheduledExecutorService;
     @BeforeAll
     static void init() {
-
         GenericObjectPoolConfig redisConfig = new GenericObjectPoolConfig();
         redisConfig.setMaxTotal(100);
         redisConfig.setMaxWaitMillis(10 * 1000);
         redisConfig.setMaxIdle(1000);
         redisConfig.setTestOnBorrow(true);
         jedisPool = new JedisPool(redisConfig,"127.0.0.1", 6379);
+        scheduledExecutorService = Executors.newScheduledThreadPool(1);
     }
+
     private static AtomicInteger counter = new AtomicInteger(0);
 
     @Test
@@ -42,7 +44,7 @@ public class TestExpireQueue {
         ExpireCallbackQueue<DataItem> queue = RedisExpireCallbackQueue.<DataItem>newBuilder()
                 .withQueue("myQueue")
                 .withJedisPool(jedisPool)
-                .withPartitions(1)
+                .withPartitions(100)
                 .withBatchPopCount(50)
                 .withSleepPeriod(1)
                 .withPartition(partition)
@@ -52,10 +54,9 @@ public class TestExpireQueue {
         ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(1);
         scheduledExecutorService.scheduleAtFixedRate(consumer(queue), 0,60, TimeUnit.SECONDS);
 
-        Thread.sleep(600000);
+        Thread.sleep(10000);
         assertEquals(10000, counter.get());
     }
-
 
     @Test
     void test() throws InterruptedException {
@@ -70,7 +71,6 @@ public class TestExpireQueue {
                 .withDecoder(jsonStr -> JsonUtil.fromJson(jsonStr, DataItem.class))
                 .build();
 
-        ScheduledExecutorService scheduledExecutorService = Executors.newScheduledThreadPool(1);
         scheduledExecutorService.schedule(consumer(queue), 1, TimeUnit.SECONDS);
 
         for (int i = 0; i < 10000; i++) {
@@ -85,6 +85,38 @@ public class TestExpireQueue {
         assertEquals(counter.get(), 10000);
     }
 
+
+    @Test
+    void testBufferTrigger() throws InterruptedException {
+        Function<DataItem, Integer> partition = (item -> item.hashCode());
+        ExpireCallbackQueue<DataItem> queue = RedisExpireCallbackQueue.<DataItem>newBuilder()
+                .withQueue("myQueue")
+                .withJedisPool(jedisPool)
+                .withPartitions(100)
+                .withBatchPopCount(50)
+                .withPartition(partition)
+                .withEnableBufferTrigger(true)
+                .withBatchCount(2000)
+                .withEncoder(dataItem -> JsonUtil.toJson(dataItem))
+                .withDecoder(jsonStr -> JsonUtil.fromJson(jsonStr, DataItem.class))
+                .build();
+
+        scheduledExecutorService.schedule(consumer(queue), 1, TimeUnit.SECONDS);
+
+        for (int i = 0; i < 10000; i++) {
+            DataItem dataItem = new DataItem(i, "name" + i);
+            queue.enqueue(dataItem, System.currentTimeMillis());
+            if (i % 1000 == 0) {
+                // 生产的慢一点
+                Thread.sleep(100);
+            }
+        }
+
+        Thread.sleep(20000);
+        assertEquals(10000, counter.get());
+    }
+
+
     private Runnable consumer(ExpireCallbackQueue<DataItem> queue) {
         return () -> {
             queue.consume((item, date) -> {
@@ -92,8 +124,6 @@ public class TestExpireQueue {
             }, null);
         };
     }
-
-
 
     static class DataItem {
         private long id;
