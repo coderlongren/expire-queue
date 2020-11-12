@@ -90,7 +90,7 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
         this.batchPopCount = batchPopCount;
         if (partitions <= 1) {
             executorService = Executors.newSingleThreadExecutor();
-        } else if (partitions > 1) {
+        } else {
             executorService = Executors.newFixedThreadPool(partitions);
         }
         runnings = new AtomicBoolean[partitions];
