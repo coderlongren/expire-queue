@@ -24,7 +24,6 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
-import org.checkerframework.checker.units.qual.A;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,7 +47,7 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
     private static final long DEFAULT_SLEEP = 1L;
     private static final int DEFAULT_BATCH_COUNT = 100;
     private static final int DEFAULT_BUFFER_BATCH_COUNT = 50;
-    private static final int BUFFER_TRIGGER_LINGER_TIME = 5;
+
     private JedisPool jedisPool;
     private String queue;
     private int partitions;
@@ -80,6 +79,8 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
      */
     private boolean enableBufferTrigger;
 
+    private int linger;
+
     private int batchCount = DEFAULT_BUFFER_BATCH_COUNT;
 
     /**
@@ -89,7 +90,7 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
 
     public RedisExpireCallbackQueue(JedisPool jedisPool, String queue, int partitions,
             Function<T, Integer> partition, Function<T, String> encoder, Function<String, T> decoder, long sleepPeriod,
-            int batchPopCount, boolean enableBufferTrigger, int batchCount) {
+            int batchPopCount, boolean enableBufferTrigger, int batchCount, int linger) {
         this.enableBufferTrigger = enableBufferTrigger;
         this.batchCount = batchCount;
         this.jedisPool = jedisPool;
@@ -100,6 +101,7 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
         this.decoder = decoder;
         this.sleepPeriod = sleepPeriod;
         this.batchPopCount = batchPopCount;
+        this.linger = linger;
         if (partitions <= 1) {
             executorService = Executors.newSingleThreadExecutor();
         } else {
@@ -112,7 +114,7 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
         if (enableBufferTrigger) {
             bufferTrigger = BufferTrigger.<QueueItem>batchBlockingTrigger()
                     .batchSize(batchCount)
-                    .linger(BUFFER_TRIGGER_LINGER_TIME, TimeUnit.SECONDS)
+                    .linger(linger, TimeUnit.SECONDS)
                     .setConsumerEx(this::consumerBufferTrigger)
                     .build();
         }
@@ -297,7 +299,10 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
         return queueNames;
     }
 
-
+    /**
+     *  linger 或者 batchCount 模式触发消费 (暂时只支持这两种消费模式)
+     * @param items
+     */
     private void consumerBufferTrigger(Collection<QueueItem> items) {
         if (items == null || items.isEmpty()) {
             return;
@@ -361,6 +366,8 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
         private int batchPopCount = DEFAULT_BATCH_COUNT;
         private boolean enableBufferTrigger;
         private int batchCount;
+        private static final int BUFFER_TRIGGER_LINGER_TIME = 1;
+        private int linger = BUFFER_TRIGGER_LINGER_TIME;
 
         public Builder() {
         }
@@ -382,6 +389,12 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
             this.jedisPool = jedisPool;
             return this;
         }
+
+        public Builder<T> withLinger(int linger) {
+            this.linger = linger;
+            return this;
+        }
+
 
         public Builder<T> withPartitions(int partitions) {
             this.partitions = partitions;
@@ -416,7 +429,7 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
         public ExpireCallbackQueue<T> build() {
             ensure();
             return new RedisExpireCallbackQueue<>(jedisPool, queue, partitions, partition, encoder, decoder, sleepPeriod,
-                    batchPopCount, enableBufferTrigger, batchCount);
+                    batchPopCount, enableBufferTrigger, batchCount, linger);
         }
 
         private void ensure() {
