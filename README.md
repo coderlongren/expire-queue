@@ -3,9 +3,9 @@
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/coderlongren/expire-queue.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/coderlongren/expire-queue/alerts/)
 [![Language grade: Java](https://img.shields.io/lgtm/grade/java/g/coderlongren/expire-queue.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/coderlongren/expire-queue/context:java)
 
-## 过期Queue 消费， 支持关系型DB & Redis 
-- Java8
-- Redis
+## 过期Queue 消费，  
+* 支持关系型DB & Redis
+* 支持BufferTrigger本地聚合，支持动态partitions 
 
 ```java
 Function<DataItem, Integer> partition = (item -> item.hashCode());

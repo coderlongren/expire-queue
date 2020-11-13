@@ -15,6 +15,7 @@ import com.github.coderlong.ExpireCallbackQueue;
 import com.github.coderlong.impl.RedisExpireCallbackQueue;
 import com.github.coderlong.util.JsonUtil;
 
+import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 
 public class TestExpireQueue {
@@ -58,6 +59,20 @@ public class TestExpireQueue {
         assertEquals(10000, counter.get());
     }
 
+
+    @Test
+    void testProduceCount() {
+        Jedis jedis = jedisPool.getResource();
+        AtomicInteger atomicInteger = new AtomicInteger(0);
+        String queueName = "myQueue";
+
+        int count = 0;
+        for (int i = 0; i < 100; i++) {
+            count += jedis.zrange(queueName + "_" + i, 0, -1).size();
+        }
+        assertEquals(100, count);
+    }
+
     @Test
     void test() throws InterruptedException {
         Function<DataItem, Integer> partition = (item -> item.hashCode());
@@ -67,21 +82,23 @@ public class TestExpireQueue {
                 .withPartitions(100)
                 .withBatchPopCount(50)
                 .withPartition(partition)
+                .withEnableBufferTrigger(true)
+                .withBatchCount(20)
                 .withEncoder(dataItem -> JsonUtil.toJson(dataItem))
                 .withDecoder(jsonStr -> JsonUtil.fromJson(jsonStr, DataItem.class))
                 .build();
 
-        scheduledExecutorService.schedule(consumer(queue), 1, TimeUnit.SECONDS);
+//        scheduledExecutorService.schedule(consumer(queue), 1, TimeUnit.SECONDS);
 
-        for (int i = 0; i < 10000; i++) {
+        for (int i = 0; i < 100; i++) {
             DataItem dataItem = new DataItem(i, "name" + i);
             queue.enqueue(dataItem, System.currentTimeMillis());
             if (i % 1000 == 0) {
                 // 生产的慢一点
-                Thread.sleep(100);
+//                Thread.sleep(100);
             }
         }
-        Thread.sleep(10000);
+        Thread.sleep(20000);
         assertEquals(counter.get(), 10000);
     }
 
