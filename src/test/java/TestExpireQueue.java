@@ -5,7 +5,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Function;
 
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.junit.jupiter.api.BeforeAll;
@@ -41,14 +40,13 @@ public class TestExpireQueue {
 
     @Test
     void testConsume() throws InterruptedException {
-        Function<DataItem, Integer> partition = (item -> item.hashCode());
         ExpireCallbackQueue<DataItem> queue = RedisExpireCallbackQueue.<DataItem>newBuilder()
                 .withQueue("myQueue")
                 .withJedisPool(jedisPool)
-                .withPartitions(100)
+                .withPartitionsSupplier(() -> 100)
                 .withBatchPopCount(50)
                 .withSleepPeriod(1)
-                .withPartition(partition)
+                .withPartition(item -> item.hashCode())
                 .withEncoder(dataItem -> JsonUtil.toJson(dataItem))
                 .withDecoder(jsonStr -> JsonUtil.fromJson(jsonStr, DataItem.class))
                 .build();
@@ -75,13 +73,12 @@ public class TestExpireQueue {
 
     @Test
     void test() throws InterruptedException {
-        Function<DataItem, Integer> partition = (item -> item.hashCode());
         ExpireCallbackQueue<DataItem> queue = RedisExpireCallbackQueue.<DataItem>newBuilder()
                 .withQueue("myQueue")
                 .withJedisPool(jedisPool)
-                .withPartitions(100)
+                .withPartitionsSupplier(() -> 100)
                 .withBatchPopCount(50)
-                .withPartition(partition)
+                .withPartition(item -> item.hashCode())
                 .withEnableBufferTrigger(true)
                 .withBatchCount(20)
                 .withEncoder(dataItem -> JsonUtil.toJson(dataItem))
@@ -105,13 +102,12 @@ public class TestExpireQueue {
 
     @Test
     void testBufferTrigger() throws InterruptedException {
-        Function<DataItem, Integer> partition = (item -> item.hashCode());
         ExpireCallbackQueue<DataItem> queue = RedisExpireCallbackQueue.<DataItem>newBuilder()
                 .withQueue("myQueue")
                 .withJedisPool(jedisPool)
-                .withPartitions(100)
+                .withPartitionsSupplier(() -> 100)
                 .withBatchPopCount(50)
-                .withPartition(partition)
+                .withPartition(item -> item.hashCode())
                 .withEnableBufferTrigger(true)
                 .withBatchCount(2000)
                 .withEncoder(dataItem -> JsonUtil.toJson(dataItem))

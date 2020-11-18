@@ -13,14 +13,15 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
+import java.util.function.IntSupplier;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
@@ -50,6 +51,8 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
 
     private JedisPool jedisPool;
     private String queue;
+    // 只支持扩容 不支持缩容
+    private IntSupplier partitionsSupplier;
     private int partitions;
     private Function<T, Integer> partition;
 
@@ -62,7 +65,7 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
      * redis zset结构， 批量pop大小
      */
     private int batchPopCount = DEFAULT_BATCH_COUNT;
-    private ExecutorService executorService;
+    private ThreadPoolExecutor threadPoolExecutor;
     private AtomicBoolean[] runnings;
     /**
      * 序列化
@@ -88,24 +91,28 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
      */
     private BufferTrigger bufferTrigger;
 
-    public RedisExpireCallbackQueue(JedisPool jedisPool, String queue, int partitions,
+    public RedisExpireCallbackQueue(JedisPool jedisPool, String queue, IntSupplier partitionsSupplier,
             Function<T, Integer> partition, Function<T, String> encoder, Function<String, T> decoder, long sleepPeriod,
             int batchPopCount, boolean enableBufferTrigger, int batchCount, int linger) {
         this.enableBufferTrigger = enableBufferTrigger;
         this.batchCount = batchCount;
         this.jedisPool = jedisPool;
         this.queue = queue;
-        this.partitions = partitions;
+        this.partitionsSupplier = partitionsSupplier;
         this.partition = partition;
         this.encoder = encoder;
         this.decoder = decoder;
         this.sleepPeriod = sleepPeriod;
         this.batchPopCount = batchPopCount;
         this.linger = linger;
+        this.partitions = partitionsSupplier == null ? 1 : partitionsSupplier.getAsInt();
         if (partitions <= 1) {
-            executorService = Executors.newSingleThreadExecutor();
+            threadPoolExecutor = new ThreadPoolExecutor(1, 1,
+                    0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>());
         } else {
-            executorService = Executors.newFixedThreadPool(partitions);
+            threadPoolExecutor = new ThreadPoolExecutor(partitions, partitions,
+                    0L, TimeUnit.MILLISECONDS,
+                    new LinkedBlockingQueue<Runnable>());
         }
         runnings = new AtomicBoolean[partitions];
         for (int i = 0; i < partitions; i++) {
@@ -164,7 +171,7 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
             String queueName = queueNames.get(i);
             AtomicBoolean running = runnings[i];
             if (running.compareAndSet(false, true)) {
-                executorService.submit(() -> {
+                threadPoolExecutor.submit(() -> {
                     consume(queueName, callback, stopSignal);
                     running.set(false);
                 });
@@ -288,6 +295,9 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
     }
 
     private List<String> getQueueNames() {
+        if (partitionsSupplier != null && partitionsSupplier.getAsInt() != partitions) {
+            excessQueue();
+        }
         List<String> queueNames = new ArrayList<>();
         if (partitions > 0) {
             for (int i = 0; i < partitions; i++) {
@@ -348,15 +358,34 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
 
     private String getQueueName(T object) {
         String queueName = queue;
+        if (partitionsSupplier != null && partitionsSupplier.getAsInt() != partitions) {
+            excessQueue();
+        }
         if (partitions > 0 && partition != null) {
             queueName = queue + "_" + (Math.abs(partition.apply(object)) % partitions);
         }
         return queueName;
     }
 
+    /**
+     *  加锁扩容
+     */
+    private synchronized void excessQueue() {
+        if (partitionsSupplier.getAsInt() < partitions) {
+            throw new IllegalArgumentException("partitions只支持扩容");
+        }
+        for (int i = partitions - 1; i < partitionsSupplier.getAsInt(); i++) {
+            runnings[i] = new AtomicBoolean(false);
+        }
+        this.partitions = partitionsSupplier.getAsInt();
+        threadPoolExecutor.setMaximumPoolSize(partitions);
+        threadPoolExecutor.setCorePoolSize(partitions);
+        threadPoolExecutor.prestartAllCoreThreads();
+    }
+
     public static class Builder<T> {
         private JedisPool jedisPool;
-        private int partitions;
+        private IntSupplier partitionsSupplier;
         private Function<T, Integer> partition;
         private Function<T, String> encoder;
         private Function<String, T> decoder;
@@ -396,8 +425,8 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
         }
 
 
-        public Builder<T> withPartitions(int partitions) {
-            this.partitions = partitions;
+        public Builder<T> withPartitionsSupplier(IntSupplier partitionsSupplier) {
+            this.partitionsSupplier = partitionsSupplier;
             return this;
         }
 
@@ -428,7 +457,7 @@ public class RedisExpireCallbackQueue<T> implements ExpireCallbackQueue<T> {
 
         public ExpireCallbackQueue<T> build() {
             ensure();
-            return new RedisExpireCallbackQueue<>(jedisPool, queue, partitions, partition, encoder, decoder, sleepPeriod,
+            return new RedisExpireCallbackQueue<>(jedisPool, queue, partitionsSupplier, partition, encoder, decoder, sleepPeriod,
                     batchPopCount, enableBufferTrigger, batchCount, linger);
         }
 
