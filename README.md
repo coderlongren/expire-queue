@@ -5,7 +5,7 @@
 
 ## 过期Queue 消费，  
 * 支持关系型DB & Redis
-* 支持BufferTrigger本地聚合，支持动态partitions 
+* 在原有的基础上新特性：支持BufferTrigger本地聚合，支持动态partitions
 
 ```java
 Function<DataItem, Integer> partition = (item -> item.hashCode());
